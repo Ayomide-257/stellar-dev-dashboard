@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../lib/store';
 import { suggestRebalancing } from '../../lib/defiAnalytics';
+import { DemoDataProvider } from '../demo/DemoDataProvider';
+import { generateSimulatedPrices } from '../../lib/demoData';
 import { fetchPrices, calculatePortfolioValue } from '../../lib/priceFeed';
 import { getServer, NETWORKS } from '../../lib/stellar';
 import { buildTransaction, signAndSubmitTransaction, simulateTransaction } from '../../lib/transactionBuilder';
@@ -68,6 +70,9 @@ export default function PortfolioRebalancer() {
   const [targets, setTargets] = useState<Record<string, number>>(DEFAULT_TARGETS);
   
   const [approved, setApproved] = useState<Record<string, boolean>>({});
+  // Assets whose price history had no market-data source and fell back to
+  // simulated values — drives the "Demo data" badge (#964).
+  const [simulatedPriceAssets, setSimulatedPriceAssets] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState('');
@@ -182,14 +187,28 @@ export default function PortfolioRebalancer() {
     }
   }, [targets, holdings]);
 
-  // Fetch or simulate historical prices
-  async function fetchHistoricalPrices(assetCodes: string[], days: number): Promise<Record<string, number[]>> {
+  // Fetch real prices from CoinGecko. Assets without a market-data source
+  // fall back to simulated series (src/lib/demoData, #964) and are reported
+  // back so the chart can be flagged with the "Demo data" badge.
+  async function fetchHistoricalPrices(
+    assetCodes: string[],
+    days: number
+  ): Promise<{ history: Record<string, number[]>; simulated: string[] }> {
     const history: Record<string, number[]> = {};
-    
+    const simulated: string[] = [];
+    const simulate = (code: string) => {
+      history[code] = generateSimulatedPrices(
+        code,
+        days,
+        holdings.find(h => h.asset === code)?.price
+      );
+      simulated.push(code);
+    };
+
     for (const code of assetCodes) {
       const coinId = ASSET_ID_MAP[code];
       if (!coinId) {
-        history[code] = generateSimulatedPrices(code, days);
+        simulate(code);
         continue;
       }
       
@@ -199,26 +218,10 @@ export default function PortfolioRebalancer() {
         const data = await res.json();
         history[code] = data.prices.map((p: any) => p[1]);
       } catch (e) {
-        history[code] = generateSimulatedPrices(code, days);
+        simulate(code);
       }
     }
-    return history;
-  }
-
-  function generateSimulatedPrices(code: string, days: number): number[] {
-    const currentHolding = holdings.find(h => h.asset === code);
-    const currentPrice = currentHolding?.price || (code === 'USDC' ? 1.0 : code === 'XLM' ? 0.12 : 0.05);
-    const prices = [];
-    let price = currentPrice;
-    const dailyVolatility = code === 'USDC' ? 0.001 : code === 'XLM' ? 0.03 : 0.05;
-    const trend = code === 'USDC' ? 0 : 0.0003; 
-    
-    for (let i = 0; i <= days; i++) {
-      prices.push(price);
-      const change = 1 + (Math.random() - 0.5) * dailyVolatility - trend;
-      price = price / change;
-    }
-    return prices.reverse();
+    return { history, simulated };
   }
 
   // Fetch history data for comparison chart
@@ -236,9 +239,10 @@ export default function PortfolioRebalancer() {
           }
         });
 
-        const pricesHistory = await fetchHistoricalPrices(assetCodes, timeRange);
+        const { history: pricesHistory, simulated } = await fetchHistoricalPrices(assetCodes, timeRange);
         
         if (!active) return;
+        setSimulatedPriceAssets(simulated);
 
         const chartData = [];
         const initialValue = 10000;
@@ -607,6 +611,10 @@ export default function PortfolioRebalancer() {
   }
 
   return (
+    <DemoDataProvider
+      active={simulatedPriceAssets.length > 0}
+      reason={`No market-data source for ${simulatedPriceAssets.join(', ')} — the price history chart is simulated.`}
+    >
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       
       {/* Upper Grid: Current Allocation & Targets */}
@@ -1145,5 +1153,6 @@ export default function PortfolioRebalancer() {
       )}
 
     </div>
+    </DemoDataProvider>
   );
 }

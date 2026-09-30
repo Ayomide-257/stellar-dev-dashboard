@@ -241,3 +241,59 @@ test.describe('Multisig', () => {
     await expect(page).toHaveScreenshot('multisig-sessions.png');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Demo data badge (#964) — simulated data must be visibly labelled
+// ---------------------------------------------------------------------------
+
+test.describe('Demo data badge (#964)', () => {
+  test.beforeEach(async ({ page }) => {
+    // Enter read-only demo mode: no wallet, no network, deterministic fixtures.
+    await page.addInitScript(() => {
+      localStorage.setItem('hasCompletedOnboarding', 'true');
+      localStorage.setItem('stellar-dashboard-theme', 'dark');
+      // Keep the floating feature-suggestions panel out of the way so it
+      // cannot intercept clicks or pollute the badge screenshots.
+      localStorage.setItem('pfs:disabled', 'true');
+    });
+    await page.goto('/connect');
+    // Wait on the element (not networkidle) so price/font polling cannot hang us.
+    const tryDemo = page.getByTestId('try-demo-button');
+    await expect(tryDemo).toBeVisible({ timeout: 15000 });
+    // Best effort: switch off the floating suggestions panel so it cannot
+    // intercept pointer events during the walkthrough.
+    const disableSuggestions = page.locator('button[title="Disable suggestions"]');
+    try {
+      await disableSuggestions.waitFor({ state: 'visible', timeout: 3000 });
+      await disableSuggestions.click();
+    } catch {
+      // Panel not shown — nothing to disable.
+    }
+    // dispatchEvent: the floating panel can cover the button; the React
+    // handler is what matters here.
+    await tryDemo.dispatchEvent('click');
+    await expect(page).toHaveURL(/\/overview/, { timeout: 15000 });
+  });
+
+  test('demo badge', async ({ page }) => {
+    // The Security dashboard renders bundled sample scan results, so it must
+    // always carry the visible "Demo data" badge (#964).
+    const hamburger = page.getByRole('button', { name: /open navigation menu/i }).first();
+    if (await hamburger.count()) {
+      await hamburger.click();
+    }
+    const securityLink = page
+      .getByRole('link', { name: /^security$/i })
+      .or(page.getByRole('button', { name: /^security$/i }))
+      .first();
+    await expect(securityLink).toBeVisible();
+    await securityLink.dispatchEvent('click');
+
+    const badge = page.getByTestId('demo-data-badge').first();
+    await expect(badge).toBeVisible({ timeout: 15000 });
+    await expect(badge).toContainText('Demo data');
+    // Let fonts/transitions settle before capturing the badge.
+    await page.waitForTimeout(600);
+    await expect(badge).toHaveScreenshot('demo-data-badge.png');
+  });
+});

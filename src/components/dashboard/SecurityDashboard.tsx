@@ -7,6 +7,8 @@ import {
   SAMPLE_MANIFEST,
   SAMPLE_REGISTRY,
 } from '../../data/dependencySample';
+import { DemoDataProvider } from '../demo/DemoDataProvider';
+import { generateDemoScanFindings } from '../../lib/demoData';
 
 // ─────────────────────────── Types ───────────────────────────
 
@@ -198,7 +200,8 @@ function SecurityScanning() {
     setTimeout(() => {
       setScanners(prev => prev.map(s => s.id === id ? {
         ...s, status: 'done',
-        findings: Math.floor(Math.random() * 8),
+        // Simulated result — the "Demo data" badge on this dashboard marks it (#964).
+        findings: generateDemoScanFindings(),
         lastRun: 'just now',
       } : s));
       setRunning(null);
@@ -707,7 +710,13 @@ export default function SecurityDashboard() {
 
   const activeStepIdx = STEPS.findIndex(s => s.id === activeStep);
 
+  // Every scanner/SAST/DAST/scorecard result on this page comes from bundled
+  // sample data (#964) — it is always flagged with the "Demo data" badge.
   return (
+    <DemoDataProvider
+      active
+      reason="Sample security scan results from bundled fixtures — no live scan is executed."
+    >
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Page header */}
       <div>
@@ -794,5 +803,6 @@ export default function SecurityDashboard() {
         }
       `}</style>
     </div>
+    </DemoDataProvider>
   );
 }

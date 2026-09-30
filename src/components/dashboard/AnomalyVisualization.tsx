@@ -15,6 +15,13 @@ import {
 } from 'lucide-react'
 
 import { useStore } from '../../lib/store'
+import { DemoDataProvider } from '../demo/DemoDataProvider'
+import {
+  DEMO_SAMPLE_SIZE,
+  generateDemoOperations,
+  generateDemoTransactions,
+  shouldUseDemoData,
+} from '../../lib/demoData'
 import Card from './Card'
 import { StatCard } from './Card'
 import { IsolationForest, extractFeatures } from '../../lib/transactionPatternAnalysis'
@@ -35,56 +42,25 @@ function toNum(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback
 }
 
-function buildFallbackTransactions(count = 120) {
-  const now = Date.now()
-  const txs = []
-  for (let i = 0; i < count; i++) {
-    const isAnomaly = Math.random() < 0.12
-    const fee = isAnomaly ? 10000 + Math.random() * 40000 : 100 + Math.random() * 400
-    const opCount = isAnomaly ? Math.floor(Math.random() * 8) + 1 : Math.floor(Math.random() * 3) + 1
-    const success = isAnomaly ? Math.random() < 0.4 : Math.random() < 0.98
-    const hourOffset = isAnomaly ? Math.floor(Math.random() * 24) : 8 + Math.floor(Math.random() * 12)
-    txs.push({
-      id: `sample-${i}`,
-      hash: `a${i.toString(16).padStart(63, '0')}`,
-      created_at: new Date(now - (count - i) * 3600000 + hourOffset * 3600000).toISOString(),
-      fee_charged: String(Math.round(fee)),
-      operation_count: opCount,
-      successful: success,
-      memo: isAnomaly && Math.random() < 0.3 ? `ref-${i}` : undefined,
-      source_account: `G${Array.from({ length: 55 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[Math.floor(Math.random() * 32)]).join('')}`,
-    })
+// Simulated sample rows live in src/lib/demoData (#964) and are only ever
+// rendered behind <DemoDataProvider>, which shows a visible "Demo data" badge.
+// If generation fails we render an empty state instead of inventing numbers.
+function loadDemoTransactions() {
+  try {
+    return generateDemoTransactions(DEMO_SAMPLE_SIZE)
+  } catch {
+    return []
   }
-  return txs
-}
-
-function buildFallbackOperations(txs) {
-  const ops = []
-  for (const tx of txs) {
-    const opCount = toNum(tx.operation_count, 1)
-    for (let j = 0; j < opCount; j++) {
-      const types = ['payment', 'create_account', 'change_trust', 'manage_sell_offer', 'path_payment_strict_send', 'set_options']
-      const isAnomalyOp = !tx.successful || toNum(tx.fee_charged) > 5000
-      ops.push({
-        id: `${tx.id}-op-${j}`,
-        type: isAnomalyOp && Math.random() < 0.4 ? 'manage_sell_offer' : types[j % types.length],
-        created_at: tx.created_at,
-        amount: String(isAnomalyOp ? 10000 + Math.random() * 90000 : 10 + Math.random() * 500),
-        asset_code: Math.random() < 0.5 ? 'XLM' : 'USDC',
-        from: tx.source_account,
-        to: `G${Array.from({ length: 55 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[Math.floor(Math.random() * 32)]).join('')}`,
-        transaction_hash: tx.hash,
-        source_account: tx.source_account,
-      })
-    }
-  }
-  return ops
 }
 
 export default function AnomalyVisualization() {
   const connectedAddress = useStore((s) => s.connectedAddress)
   const storeTxs = useStore((s) => s.transactions)
   const storeOps = useStore((s) => s.operations)
+
+  // Views show live Horizon data whenever the store has enough of it;
+  // otherwise the simulated sample is flagged with the "Demo data" badge.
+  const usingDemoData = shouldUseDemoData(storeTxs.length) || shouldUseDemoData(storeOps.length)
 
   const svgRef = useRef(null)
   const containerRef = useRef(null)
@@ -99,7 +75,7 @@ export default function AnomalyVisualization() {
   const [dimensions, setDimensions] = useState({ width: 800, height: 500 })
 
   const transactions = useMemo(() => {
-    const source = storeTxs.length > 5 ? storeTxs : buildFallbackTransactions(120)
+    const source = shouldUseDemoData(storeTxs.length) ? loadDemoTransactions() : storeTxs
     return source.map((tx) => ({
       id: tx.id,
       hash: tx.hash,
@@ -113,8 +89,8 @@ export default function AnomalyVisualization() {
   }, [storeTxs])
 
   const operations = useMemo(() => {
-    if (storeOps.length > 5) return storeOps
-    return buildFallbackOperations(transactions)
+    if (!shouldUseDemoData(storeOps.length)) return storeOps
+    return generateDemoOperations(transactions)
   }, [storeOps, transactions])
 
   const { projected, scores, clusters, clusterAssignments, explainedVariance, featureImportance } = useMemo(() => {
@@ -437,6 +413,10 @@ export default function AnomalyVisualization() {
   }
 
   return (
+    <DemoDataProvider
+      active={usingDemoData}
+      reason="No live Horizon transaction history yet — points come from a simulated sample."
+    >
     <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 700 }}>
         Anomaly Visualization
@@ -795,5 +775,6 @@ export default function AnomalyVisualization() {
         </div>
       </div>
     </div>
+    </DemoDataProvider>
   )
 }

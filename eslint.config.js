@@ -75,4 +75,36 @@ export default [
       'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
     },
   },
+  {
+    // #964 — user-facing components must not invent numbers with Math.random().
+    // Simulated data belongs in src/lib/demoData and must be rendered behind
+    // <DemoDataProvider>, which shows a visible "Demo data" badge.
+    files: ['src/components/**/*.{js,jsx,ts,tsx}'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Math',
+          property: 'random',
+          message:
+            'Math.random() is restricted in src/components. Move simulated/user-visible data to src/lib/demoData and render it behind <DemoDataProvider> (src/components/demo/DemoDataProvider.tsx). Pure ID generation, model jitter, or example-only uses may be added to the allow-list in eslint.config.js after review. See docs/DATA_AUTHENTICITY.md.',
+        },
+      ],
+    },
+  },
+  {
+    // Allow-list for the Math.random() restriction above. Each entry must name
+    // its category (ID / jitter / example) — fake data is NOT allowed here.
+    files: [
+      // ID: session-scoped operation IDs (Date.now() + Math.random())
+      'src/components/dashboard/TransactionBuilder.tsx',
+      // Jitter: ±noise on the synthetic training history of the congestion forecast model
+      'src/components/layout/widgets/CongestionForecastWidget.tsx',
+      // Example-only: intentionally random failure injection for the error-handling demo
+      'src/components/examples/ErrorHandlingExample.tsx',
+    ],
+    rules: {
+      'no-restricted-properties': 'off',
+    },
+  },
 ];
