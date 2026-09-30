@@ -166,6 +166,13 @@ export default function DashboardLayout() {
     isDemoMode,
     exitDemoMode,
   } = useStore() as any;
+  // Summary for the read-only demo banner (#875). Declared here because the
+  // #959 merge dropped the binding while the template still referenced it,
+  // which crashed demo mode with "demoSummary is not defined" (#964 repair).
+  const demoSummary = React.useMemo(
+    () => (isDemoMode ? getDemoFixtureSummarySafe() : null),
+    [isDemoMode]
+  );
   const { isMobile, isTablet } = useResponsive();
   const { level, isNovice, setLevel, updateSignals } = useExpertise();
   const { trackFeatureInteraction } = useExpertiseTracking({ enabled: true });
